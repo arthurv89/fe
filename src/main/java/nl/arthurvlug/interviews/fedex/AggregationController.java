@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -16,9 +17,9 @@ public class AggregationController {
 
     @GetMapping(value = "/aggregation", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Aggregation> aggregation(
-            @RequestParam("shipments") String shipmentIds,
-            @RequestParam("track") String trackIds,
-            @RequestParam("pricing") String countryCodes
+            @Nullable @RequestParam(value = "shipments", required = false) String shipmentIds,
+            @Nullable @RequestParam(value = "track", required = false) String trackIds,
+            @Nullable @RequestParam(value = "pricing", required = false) String countryCodes
     ) {
         final Aggregation aggregate = aggregationService.aggregate(
                 splitString(shipmentIds),
@@ -28,7 +29,10 @@ public class AggregationController {
         return ResponseEntity.ok(aggregate);
     }
 
-    private static Set<String> splitString(final String commaSeparatedStrings) {
+    private static Set<String> splitString(@Nullable final String commaSeparatedStrings) {
+        if(commaSeparatedStrings == null) {
+            return Set.of();
+        }
         return Arrays.stream(commaSeparatedStrings.split(","))
                 .collect(Collectors.toSet());
     }

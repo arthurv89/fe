@@ -2,6 +2,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.google.common.collect.ImmutableMap;
 import nl.arthurvlug.interviews.fedex.Aggregation;
 import nl.arthurvlug.interviews.fedex.Application;
 import org.junit.jupiter.api.AfterEach;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -18,6 +20,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +63,24 @@ public class AggregationTest {
                 TestData.smallShipmentsMap(),
                 TestData.smallTrackMap(),
                 TestData.smallPricingMap()
+        ));
+    }
+
+    @Test
+    public void testNotAllParameters() throws Exception {
+        stubShipments(TestData.smallShipmentsMap(), 200, TestData.smallShipmentIds);
+        stubTrack(TestData.smallTrackMap(), 200, TestData.smallTrackIds);
+        stubPricing(TestData.smallPricingMap(), 200, TestData.smallPricingIds);
+
+        final Aggregation aggregation = aggregationCall(
+                null,
+                null,
+                null
+        );
+        assertThat(aggregation).isEqualTo(toAggregation(
+                Map.of(),
+                Map.of(),
+                Map.of()
         ));
     }
 
@@ -119,8 +141,21 @@ public class AggregationTest {
                         .withBody(objectMapper.writeValueAsString(responseBody))));
     }
 
-    private Aggregation aggregationCall(final String pricing, final String track, final String shipments) throws URISyntaxException, IOException, InterruptedException {
-        return aggregationCall(String.format("pricing=%s&track=%s&shipments=%s", pricing, track, shipments));
+    private Aggregation aggregationCall(
+            @Nullable final String pricing,
+            @Nullable final String track,
+            @Nullable final String shipments
+    ) throws URISyntaxException, IOException, InterruptedException {
+        final ImmutableMap.Builder<String, String> mapBuilder = ImmutableMap.builder();
+        if(pricing != null) { mapBuilder.put("pricing", pricing); }
+        if(track != null) { mapBuilder.put("track", track); }
+        if(shipments != null) { mapBuilder.put("shipments", shipments); }
+        final Map<String, String> map = mapBuilder.build();
+        final String queryParams = map.entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(Collectors.joining("&"));
+
+        return aggregationCall(queryParams);
     }
 
     private Aggregation aggregationCall(final String queryParams) throws URISyntaxException, IOException, InterruptedException {
@@ -129,8 +164,8 @@ public class AggregationTest {
                 .GET()
                 .header("Accept", MediaType.APPLICATION_JSON_VALUE)
                 .build();
-        final HttpResponse<String> send = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        final String json = send.body();
+        final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        final String json = response.body();
         return objectMapper.readValue(json, Aggregation.class);
     }
 }
