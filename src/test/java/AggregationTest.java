@@ -18,12 +18,14 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static java.time.Duration.ZERO;
+import static nl.arthurvlug.interviews.fedex.apiwrapper.ApiWrapper.timeout;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class AggregationTest {
@@ -50,9 +52,9 @@ public class AggregationTest {
 
     @Test
     public void testAllSuccess() throws Exception {
-        stubShipments(TestData.smallShipmentsMap(), 200, TestData.smallShipmentIds);
-        stubTrack(TestData.smallTrackMap(), 200, TestData.smallTrackIds);
-        stubPricing(TestData.smallPricingMap(), 200, TestData.smallPricingIds);
+        stubShipments(TestData.smallShipmentsMap, 200, TestData.smallShipmentIds, ZERO);
+        stubTrack(TestData.smallTrackMap, 200, TestData.smallTrackIds);
+        stubPricing(TestData.smallPricingMap, 200, TestData.smallPricingIds);
 
         long startTime = System.currentTimeMillis();
         final Aggregation aggregation = aggregationCall(TestData.smallPricingIds, TestData.smallTrackIds, TestData.smallShipmentIds);
@@ -60,17 +62,17 @@ public class AggregationTest {
 
         assertThat(endTime - startTime).isGreaterThan(schedulerPeriod/2);
         assertThat(aggregation).isEqualTo(toAggregation(
-                TestData.smallShipmentsMap(),
-                TestData.smallTrackMap(),
-                TestData.smallPricingMap()
+                TestData.smallShipmentsMap,
+                TestData.smallTrackMap,
+                TestData.smallPricingMap
         ));
     }
 
     @Test
     public void testNotAllParameters() throws Exception {
-        stubShipments(TestData.smallShipmentsMap(), 200, TestData.smallShipmentIds);
-        stubTrack(TestData.smallTrackMap(), 200, TestData.smallTrackIds);
-        stubPricing(TestData.smallPricingMap(), 200, TestData.smallPricingIds);
+        stubShipments(TestData.smallShipmentsMap, 200, TestData.smallShipmentIds, ZERO);
+        stubTrack(TestData.smallTrackMap, 200, TestData.smallTrackIds);
+        stubPricing(TestData.smallPricingMap, 200, TestData.smallPricingIds);
 
         final Aggregation aggregation = aggregationCall(
                 null,
@@ -86,9 +88,9 @@ public class AggregationTest {
 
     @Test
     public void testSomeSuccess_scheduler() throws Exception {
-        stubShipments(null, 503, TestData.smallShipmentIds);
-        stubTrack(TestData.smallTrackMap(), 200, TestData.smallTrackIds);
-        stubPricing(TestData.smallPricingMap(), 200, TestData.smallPricingIds);
+        stubShipments(null, 503, TestData.smallShipmentIds, ZERO);
+        stubTrack(TestData.smallTrackMap, 200, TestData.smallTrackIds);
+        stubPricing(TestData.smallPricingMap, 200, TestData.smallPricingIds);
 
         long startTime = System.currentTimeMillis();
         final Aggregation aggregation = aggregationCall(TestData.smallPricingIds, TestData.smallTrackIds, TestData.smallShipmentIds);
@@ -97,14 +99,14 @@ public class AggregationTest {
         assertThat(endTime - startTime).isGreaterThan(schedulerPeriod/2);
         assertThat(aggregation).isEqualTo(toAggregation(
                 TestData.nullSmallShipmentsMap(),
-                TestData.smallTrackMap(),
-                TestData.smallPricingMap()
+                TestData.smallTrackMap,
+                TestData.smallPricingMap
         ));
     }
 
     @Test
     public void testSomeSuccess_immediately() throws Exception {
-        stubShipments(null, 503, TestData.bigShipmentIds);
+        stubShipments(null, 503, TestData.bigShipmentIds, ZERO);
         stubTrack(null, 200, TestData.bigTrackIds);
         stubPricing(null, 200, TestData.bigPricingIds);
 
@@ -116,29 +118,45 @@ public class AggregationTest {
 
     }
 
+    @Test
+    public void testSlowAggregation_responseWithNulls() throws Exception {
+        stubShipments(TestData.smallShipmentsMap, 200, TestData.smallShipmentIds, timeout.plusMillis(2000));
+        stubTrack(TestData.smallTrackMap, 200, TestData.smallTrackIds);
+        stubPricing(TestData.smallPricingMap, 200, TestData.smallPricingIds);
+
+        final Aggregation aggregation = aggregationCall(TestData.smallPricingIds, TestData.smallTrackIds, TestData.smallShipmentIds);
+
+        assertThat(aggregation).isEqualTo(new Aggregation(
+                TestData.nullSmallShipmentsMap(),
+                TestData.smallTrackMap,
+                TestData.smallPricingMap));
+
+    }
+
     private Aggregation toAggregation(final Map<String, List<String>> shipmentsMap,
                                       final Map<String, String> trackMap,
                                       final Map<String, Float> pricingMap) {
         return new Aggregation(shipmentsMap, trackMap, pricingMap);
     }
 
-    private void stubShipments(final Map<String, List<String>> map, final int status, final String ids) throws JsonProcessingException {
-        stubGet("/shipments?q=" + ids, map, status);
+    private void stubShipments(final Map<String, List<String>> map, final int status, final String ids, final Duration delay) throws JsonProcessingException {
+        stubGet("/shipments?q=" + ids, map, status, delay);
     }
 
     private void stubTrack(final Map<String, String> map, final int status, final String ids) throws JsonProcessingException {
-        stubGet("/track?q=" + ids, map, status);
+        stubGet("/track?q=" + ids, map, status, ZERO);
     }
 
     private void stubPricing(final Map<String, Float> map, final int status, final String countryCodes) throws JsonProcessingException {
-        stubGet("/pricing?q=" + countryCodes, map, status);
+        stubGet("/pricing?q=" + countryCodes, map, status, ZERO);
     }
 
-    private void stubGet(final String url, final Object responseBody, final int status) throws JsonProcessingException {
+    private void stubGet(final String url, final Object responseBody, final int status, final Duration delay) throws JsonProcessingException {
         wireMockServer.stubFor(WireMock.get(url)
                 .willReturn(aResponse()
                         .withStatus(status)
-                        .withBody(objectMapper.writeValueAsString(responseBody))));
+                        .withBody(objectMapper.writeValueAsString(responseBody))
+                        .withFixedDelay((int) delay.toMillis())));
     }
 
     private Aggregation aggregationCall(

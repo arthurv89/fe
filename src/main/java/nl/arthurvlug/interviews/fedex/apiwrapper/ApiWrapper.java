@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -38,6 +39,7 @@ public abstract class ApiWrapper<O> {
 
     private static final int queueCap = 5;
     private static final int schedulingPeriod = 5; // In seconds
+    public static final Duration timeout = Duration.ofMillis(300);
 
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
     private final Map<String, List<CompletableFuture<Optional<O>>>> listeners = new ConcurrentHashMap<>();
@@ -108,7 +110,8 @@ public abstract class ApiWrapper<O> {
 
     private CompletableFuture<Map<String, O>> getFromService(final String path, final Set<String> inputSet) {
         return executeGetCall(path + "?q=" + joinItems(inputSet))
-                .thenApply(json -> parseJson(json, getTypeReference()));
+                .thenApply(json -> parseJson(json, getTypeReference()))
+                .exceptionally(t -> null);
     }
 
     private void resetSchedule() {
@@ -194,6 +197,7 @@ public abstract class ApiWrapper<O> {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(new URI(host + path))
                     .GET()
+                    .timeout(timeout)
                     .build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(this::handleBody);
