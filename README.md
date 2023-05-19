@@ -33,5 +33,7 @@ The tests are created using Wiremock.
 Each test spins up the application, and tears it down afterwards. This is done to ensure the application state is wiped after each test.
 These are the test scenarios:
 - Gets only success data from the APIs
+- Test that the calls don't throw exceptions if we don't provide all parameters in the request. 
 - Some of the requests to the APIs are successful, others are not. In this case we check that we receive null values.
 - We send enough data that it doesn't wait for the scheduler (all multiples of 5). In this case we verify that we receive a response immediately.
+- Expect that we receive NULL-values in the response map when the corresponding call timed out.
